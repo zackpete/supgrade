@@ -68,7 +68,7 @@ func main() {
 	if socket, err := net.Listen("tcp", listen); err != nil {
 		die(err.Error())
 	} else {
-		log(START, listen, *dest)
+		log(START, listen, *dest, nil)
 		for {
 			if conn, err := socket.Accept(); err != nil {
 				log(ERROR, listen, *dest, err)
@@ -87,11 +87,11 @@ func handle(src net.Conn, host string, port int) {
 		src.Close()
 	} else {
 		s, d := src.RemoteAddr().String(), dst.RemoteAddr().String()
-		log(OPEN, s, d)
+		log(OPEN, s, d, nil)
 		dst = tls.Client(dst, &tls.Config{ServerName: host})
 		w := pipe(src, dst)
 		w.Wait()
-		log(CLOSE, s, d)
+		log(CLOSE, s, d, nil)
 	}
 }
 
@@ -116,7 +116,7 @@ func pipe(src, dst net.Conn) *sync.WaitGroup {
 	return w
 }
 
-func log(kind event, src, dst string, err ...error) {
+func log(kind event, src, dst string, err error) {
 	fmt.Fprintf(
 		os.Stdout,
 		"%s [%s] %s => %s\n",
@@ -125,7 +125,7 @@ func log(kind event, src, dst string, err ...error) {
 		src, dst,
 	)
 
-	if kind == ERROR && *verb && len(err) > 0 {
+	if kind == ERROR && *verb && err != nil {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		fmt.Fprintln(os.Stderr)
