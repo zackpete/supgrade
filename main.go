@@ -2,8 +2,10 @@ package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
+	"github.com/miekg/dns"
 	"io"
 	"net"
 	"net/url"
@@ -29,17 +31,21 @@ var (
 	port *int
 	dest *string
 	verb *bool
+	name *string
+	nett *time.Duration
 )
 
 func init() {
 	port = flag.Int("p", 80, "port to listen on")
 	dest = flag.String("d", "", "forwarding destination")
 	verb = flag.Bool("v", false, "verbose errors")
-
-	flag.Parse()
+	name = flag.String("n", "", "nameserver to use for looking up destination")
+	nett = flag.Duration("t", 10*time.Second, "timeout for network operations")
 }
 
 func main() {
+	flag.Parse()
+
 	var (
 		dhost string
 		dport int
@@ -73,16 +79,27 @@ func main() {
 			if conn, err := socket.Accept(); err != nil {
 				log(ERROR, listen, *dest, err)
 			} else {
-				go handle(conn, dhost, dport)
+				go handle(conn, *name, dhost, dport)
 			}
 		}
 	}
 }
 
-func handle(src net.Conn, host string, port int) {
-	forward := fmt.Sprintf("%s:%d", host, port)
+func handle(src net.Conn, ns, host string, port int) {
+	var forward string
 
-	if dst, err := net.Dial("tcp", forward); err != nil {
+	if ns != "" {
+		if ip, err := lookup(ns, host); err != nil {
+			log(ERROR, src.RemoteAddr().String(), host, err)
+			return
+		} else {
+			forward = fmt.Sprintf("%s:%d", ip, port)
+		}
+	} else {
+		forward = fmt.Sprintf("%s:%d", host, port)
+	}
+
+	if dst, err := net.DialTimeout("tcp", forward, *nett); err != nil {
 		log(ERROR, src.RemoteAddr().String(), forward, err)
 		src.Close()
 	} else {
@@ -93,6 +110,36 @@ func handle(src net.Conn, host string, port int) {
 		w.Wait()
 		log(CLOSE, s, d, nil)
 	}
+}
+
+func lookup(ns, host string) (string, error) {
+	c := dns.Client{
+		DialTimeout:  *nett,
+		Timeout:      *nett,
+		ReadTimeout:  *nett,
+		WriteTimeout: *nett,
+	}
+
+	m := dns.Msg{}
+	m.SetQuestion(host+".", dns.TypeA)
+
+	r, _, err := c.Exchange(&m, ns+":53")
+
+	if err != nil {
+		return "", err
+	}
+
+	if len(r.Answer) == 0 {
+		return "", errors.New("no results from resolver")
+	}
+
+	for _, a := range r.Answer {
+		if a, ok := a.(*dns.A); ok {
+			return a.A.String(), nil
+		}
+	}
+
+	return "", errors.New("no A records found for destination")
 }
 
 func pipe(src, dst net.Conn) *sync.WaitGroup {
