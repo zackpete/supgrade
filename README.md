@@ -24,4 +24,4 @@ Usage of supgrade:
 ## Description
 
 Created mainly to intercept HTTP traffic with tools like Wireshark
-(for connections where one can't easily expose the TLS seesion key.)
+(for connections where one can't easily expose the TLS session key.)
