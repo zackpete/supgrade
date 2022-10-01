@@ -33,7 +33,10 @@ var (
 	verb *bool
 	name *string
 	nett *time.Duration
+	zone *string
 )
+
+var parsedZone *time.Location
 
 func init() {
 	port = flag.Int("p", 80, "port to listen on")
@@ -41,6 +44,7 @@ func init() {
 	verb = flag.Bool("v", false, "verbose errors")
 	name = flag.String("n", "", "nameserver to use for looking up destination")
 	nett = flag.Duration("t", 10*time.Second, "timeout for network operations")
+	zone = flag.String("z", "", "time zone for which to display timestamps")
 }
 
 func main() {
@@ -67,6 +71,14 @@ func main() {
 		}
 
 		*dest = fmt.Sprintf("%s:%d", dhost, dport)
+	}
+
+	if *zone == "" {
+		parsedZone = time.Local
+	} else if z, err := time.LoadLocation(*zone); err != nil {
+		die("invalid time zone", err.Error())
+	} else {
+		parsedZone = z
 	}
 
 	listen := fmt.Sprintf("0.0.0.0:%d", *port)
@@ -167,7 +179,7 @@ func log(kind event, src, dst string, err error) {
 	fmt.Fprintf(
 		os.Stdout,
 		"%s [%s] %s => %s\n",
-		time.Now().In(time.UTC).Format(time.RFC3339),
+		time.Now().In(parsedZone).Format(time.RFC3339),
 		string(kind),
 		src, dst,
 	)
